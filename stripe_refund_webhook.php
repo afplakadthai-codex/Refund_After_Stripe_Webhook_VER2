@@ -696,12 +696,12 @@ function bvsw_process_refund(array $refundObj): void
     $refund = bvsw_find_refund_from_payload($refundObj);
     if (!$refund) {
         bvsw_log('refund_mapping_not_found', ['provider_refund_id' => $providerRefundId]);
-        return;
+        throw new RuntimeException('refund_mapping_not_found');
     }
 
     $refundId = (int)($refund['id'] ?? 0);
     if ($refundId <= 0) {
-        return;
+        throw new RuntimeException('invalid_refund_id');
     }
 
     $amount = bvsw_minor_to_major($refundObj['amount'] ?? 0);
@@ -717,7 +717,6 @@ function bvsw_process_refund(array $refundObj): void
         if (bvsw_is_already_succeeded($refundId, $providerRefundId)) {
             return;
         }
-
         if (function_exists('bv_order_refund_mark_refunded')) {
             try {
                 bv_order_refund_mark_refunded($refundId, $amount, [
@@ -728,12 +727,13 @@ function bvsw_process_refund(array $refundObj): void
                     'currency' => strtoupper((string)($refundObj['currency'] ?? ($refund['currency'] ?? 'USD'))),
                     'status' => 'succeeded',
                     'raw_response_payload' => $refundObj,
-                ], 0, 'Stripe webhook succeeded', 'system');
+                 ], 0, 'Stripe webhook succeeded', 'system');
             } catch (Throwable $e) {
                 bvsw_log('mark_refunded_helper_failed', ['refund_id' => $refundId, 'error' => $e->getMessage()]);
+                throw new RuntimeException('mark_refunded_helper_failed: ' . $e->getMessage(), 0, $e);
             }
         } else {
-            bvsw_exec(
+            bvsw_exec(  
                 'UPDATE order_refunds SET status = :status, actual_refunded_amount = :amount, refunded_at = :refunded_at, updated_at = :updated_at WHERE id = :id LIMIT 1',
                 ['status' => 'refunded', 'amount' => $amount, 'refunded_at' => bvsw_now(), 'updated_at' => bvsw_now(), 'id' => $refundId]
             );
@@ -742,11 +742,12 @@ function bvsw_process_refund(array $refundObj): void
         bvsw_upsert_transaction($refundId, 'succeeded', $refundObj);
         bvsw_upsert_ledger($refund, 'succeeded', $amount, $providerRefundId);
 
-        if (function_exists('bv_order_refund_sync_cancellation_bridge')) {
+       if (function_exists('bv_order_refund_sync_cancellation_bridge')) {
             try {
                 bv_order_refund_sync_cancellation_bridge($refundId);
             } catch (Throwable $e) {
                 bvsw_log('sync_cancellation_failed', ['refund_id' => $refundId, 'error' => $e->getMessage()]);
+                throw new RuntimeException('sync_cancellation_failed: ' . $e->getMessage(), 0, $e);
             }
         }
 
@@ -755,6 +756,7 @@ function bvsw_process_refund(array $refundObj): void
                 bv_order_refund_sync_order_payment_status($refundId);
             } catch (Throwable $e) {
                 bvsw_log('sync_order_status_helper_failed', ['refund_id' => $refundId, 'error' => $e->getMessage()]);
+                throw new RuntimeException('sync_order_status_helper_failed: ' . $e->getMessage(), 0, $e);
             }
         } else {
             $approvedAmount = round((float)($refund['approved_refund_amount'] ?? 0), 2);
@@ -775,9 +777,10 @@ function bvsw_process_refund(array $refundObj): void
                     'status' => $status,
                     'error_message' => (string)($refundObj['failure_reason'] ?? ''),
                     'raw_response_payload' => $refundObj,
-                ], 0, 'system');
+                 ], 0, 'system');
             } catch (Throwable $e) {
                 bvsw_log('mark_failed_helper_failed', ['refund_id' => $refundId, 'error' => $e->getMessage()]);
+                throw new RuntimeException('mark_failed_helper_failed: ' . $e->getMessage(), 0, $e);
             }
         } else {
             bvsw_exec(
@@ -798,9 +801,10 @@ function bvsw_process_refund(array $refundObj): void
                 bv_order_refund_mark_processing($refundId, 0, 'Stripe webhook pending', 'system');
             } catch (Throwable $e) {
                 bvsw_log('mark_processing_helper_failed', ['refund_id' => $refundId, 'error' => $e->getMessage()]);
+                throw new RuntimeException('mark_processing_helper_failed: ' . $e->getMessage(), 0, $e);
             }
         }
-        bvsw_upsert_transaction($refundId, 'pending', $refundObj);
+        bvsw_upsert_transaction($refundId, 'pending', $refundObj); 
     }
 }
 
@@ -849,9 +853,10 @@ try {
             bvsw_log('process_refund_failed', [
                 'event_id' => $eventId,
                 'event_type' => $eventType,
-                'refund_id' => (string)($refundObj['id'] ?? ''),
+              'refund_id' => (string)($refundObj['id'] ?? ''),
                 'error' => $e->getMessage(),
             ]);
+            throw $e;
         }
     }
 
@@ -859,5 +864,5 @@ try {
     bvsw_json_response(200, ['ok' => true]);
 } catch (Throwable $e) {
     bvsw_log('webhook_exception', ['event_id' => $eventId, 'error' => $e->getMessage()]);
-    bvsw_json_response(200, ['ok' => true, 'handled_with_error' => true]);
+    bvsw_json_response(500, ['ok' => false, 'error' => 'refund_processing_failed']);
 }
