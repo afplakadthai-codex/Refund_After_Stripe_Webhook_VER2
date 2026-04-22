@@ -1745,7 +1745,7 @@ if (!function_exists('bv_refund_notification_build_payloads')) {
                 . '<p><a href="' . htmlspecialchars($detailUrl, ENT_QUOTES, 'UTF-8') . '">View refund details</a><br>'
                 . '<a href="' . htmlspecialchars($dashboardUrl, ENT_QUOTES, 'UTF-8') . '">Open dashboard</a></p>';
 
-            $payloads[] = [
+             $payloads[] = [
                 'recipient_type' => 'buyer',
                 'email' => $buyerEmail,
                 'job' => [
@@ -1755,9 +1755,11 @@ if (!function_exists('bv_refund_notification_build_payloads')) {
                     'subject' => $buyerSubject,
                     'html' => $buyerHtml,
                     'text' => $buyerText,
-                    'meta' => [
+                     'meta' => [
                         'type' => 'refund_notification',
                         'event' => $event,
+                        'event_type' => 'refund_' . $event,
+                        'target' => 'buyer',
                         'recipient_type' => 'buyer',
                         'refund_id' => $refundId,
                         'order_id' => $orderId,
@@ -1803,7 +1805,7 @@ if (!function_exists('bv_refund_notification_build_payloads')) {
                 'email' => $sellerEmail,
                 'job' => [
                     'queue_key' => 'refund_' . $event . '_seller_' . $refundId . '_' . md5(strtolower($sellerEmail)),
-                    'profile' => 'default',
+                    'profile' => 'seller',
                     'to' => [$sellerEmail],
                     'subject' => $sellerSubject,
                     'html' => $sellerHtml,
@@ -1811,6 +1813,8 @@ if (!function_exists('bv_refund_notification_build_payloads')) {
                     'meta' => [
                         'type' => 'refund_notification',
                         'event' => $event,
+                        'event_type' => 'refund_' . $event,
+                        'target' => 'seller',
                         'recipient_type' => 'seller',
                         'refund_id' => $refundId,
                         'order_id' => $orderId,
@@ -1842,7 +1846,7 @@ if (!function_exists('bv_refund_notification_build_payloads')) {
                     'email' => $adminEmail,
                     'job' => [
                         'queue_key' => 'refund_' . $event . '_admin_' . $refundId . '_' . md5(strtolower($adminEmail)),
-                        'profile' => 'default',
+                        'profile' => 'admin',
                         'to' => [$adminEmail],
                         'subject' => $adminSubject,
                         'html' => $adminHtml,
@@ -1850,6 +1854,8 @@ if (!function_exists('bv_refund_notification_build_payloads')) {
                         'meta' => [
                             'type' => 'refund_notification',
                             'event' => $event,
+                            'event_type' => 'refund_' . $event,
+                            'target' => 'admin',
                             'recipient_type' => 'admin',
                             'refund_id' => $refundId,
                             'order_id' => $orderId,
